@@ -1,0 +1,178 @@
+diff -urN a/arch/arm/Kconfig b/arch/arm/Kconfig
+--- a/arch/arm/Kconfig	2018-06-01 15:03:56.747953854 +0900
++++ b/arch/arm/Kconfig	2018-06-01 11:24:47.537482200 +0900
+@@ -1028,7 +1028,7 @@
+        bool
+        select GENERIC_TIME_VSYSCALL
+        select IPIPE_HAVE_HOSTRT if IPIPE
+-       default y if ARCH_AT91 || ARM_TIMER_SP804 || ARCH_MXC || ARCH_OMAP || PLAT_PXA || PLAT_S3C24XX || ARCH_SA1100
++       default y if ARCH_AT91 || ARM_TIMER_SP804 || ARCH_MXC || ARCH_OMAP || PLAT_PXA || PLAT_S3C24XX || ARCH_SA1100 || ARCH_BCM2708
+ endif
+ 
+ source "arch/arm/firmware/Kconfig"
+diff -urN a/arch/arm/mach-bcm2708/bcm2708.c b/arch/arm/mach-bcm2708/bcm2708.c
+--- a/arch/arm/mach-bcm2708/bcm2708.c	2018-06-01 15:03:56.747953854 +0900
++++ b/arch/arm/mach-bcm2708/bcm2708.c	2018-06-01 12:20:03.159274300 +0900
+@@ -48,6 +48,9 @@
+ #include <asm/mach-types.h>
+ #include <linux/sched_clock.h>
+ 
++#include <linux/ipipe.h>
++#include <linux/ipipe_tickdev.h>
++
+ #include <asm/mach/arch.h>
+ #include <asm/mach/flash.h>
+ #include <asm/mach/irq.h>
+@@ -160,6 +163,12 @@
+ /* The STC is a free running counter that increments at the rate of 1MHz */
+ #define STC_FREQ_HZ 1000000
+ 
++#define SYSTEM_CLOCK_FREQ_HZ		250000000
++
++// The ARM Timer is a free running counter that increments at the rate of
++// the system clock (without pre-scaling)
++#define ARM_TIMER_FREQ_HZ				SYSTEM_CLOCK_FREQ_HZ
++
+ static inline uint32_t timer_read(void)
+ {
+ 	/* STC: a free running counter that increments at the rate of 1MHz */
+@@ -1015,12 +1024,27 @@
+ 	return 0;
+ }
+ 
++static inline void bcm2708_timer_ack(void)
++{
++	writel(1 << 3, __io_address(ST_BASE + 0x00));	/* stcs clear timer int */
++}
++
++#ifdef CONFIG_IPIPE
++static struct ipipe_timer bcm2708_itimer = {
++	.irq = IRQ_TIMER3,
++	.ack = bcm2708_timer_ack,
++};
++#endif /* CONFIG_IPIPE */
++
+ static struct clock_event_device timer0_clockevent = {
+ 	.name = "timer0",
+ 	.shift = 32,
+ 	.features = CLOCK_EVT_FEAT_ONESHOT,
+ 	.set_mode = timer_set_mode,
+ 	.set_next_event = timer_set_next_event,
++#ifdef CONFIG_IPIPE
++	.ipipe_timer    = &bcm2708_itimer,
++#endif /* CONFIG_IPIPE */
+ };
+ 
+ /*
+@@ -1030,7 +1054,10 @@
+ {
+ 	struct clock_event_device *evt = &timer0_clockevent;
+ 
+-	writel(1 << 3, __io_address(ST_BASE + 0x00));	/* stcs clear timer int */
++	if (!clockevent_ipipe_stolen(evt))
++		bcm2708_timer_ack();
++
++	__ipipe_tsc_update();
+ 
+ 	evt->event_handler(evt);
+ 
+@@ -1043,6 +1070,38 @@
+ 	.handler = bcm2708_timer_interrupt,
+ };
+ 
++#ifdef CONFIG_IPIPE
++static struct __ipipe_tscinfo tsc_info = {
++	.type = IPIPE_TSC_TYPE_FREERUNNING,
++	.u = {
++		{
++			.mask = 0xffffffff,
++		},
++	},
++};
++
++static void bcm2708_xenomai_tsc_init(void)
++{
++#ifdef CONFIG_PM
++	tsc_info.freq = STC_FREQ_HZ;
++	tsc_info.counter_vaddr = (unsigned long)__io_address(ST_BASE + 4);
++	tsc_info.u.fr.counter = (unsigned *)(ST_BASE + 4);
++#else
++	/*
++	 * Start the ARM timer
++	 */
++	unsigned int control_reg = TIMER_CTRL_ENAFREE | TIMER_CTRL_DBGHALT |
++		TIMER_CTRL_32BIT;
++	writel(control_reg, __io_address(ARM_T_CONTROL));
++
++	tsc_info.freq = ARM_TIMER_FREQ_HZ;
++	tsc_info.counter_vaddr = (unsigned long)__io_address(ARM_T_FREECNT);
++	tsc_info.u.fr.counter = (unsigned *)(ARMCTRL_TIMER0_1_BASE + 0x20);
++#endif /* CONFIG_PM */
++	__ipipe_tsc_register(&tsc_info);
++}
++#endif /* CONFIG_IPIPE */
++
+ /*
+  * Set up timer interrupt, and return the current time in seconds.
+  */
+@@ -1075,6 +1134,10 @@
+ 	clockevents_register_device(&timer0_clockevent);
+ 
+ 	register_current_timer_delay(&bcm2708_delay_timer);
++
++#ifdef CONFIG_IPIPE
++	bcm2708_xenomai_tsc_init();
++#endif
+ }
+ 
+ #if defined(CONFIG_LEDS_GPIO) || defined(CONFIG_LEDS_GPIO_MODULE)
+diff -urN a/arch/arm/mach-bcm2708/bcm2708_gpio.c b/arch/arm/mach-bcm2708/bcm2708_gpio.c
+--- a/arch/arm/mach-bcm2708/bcm2708_gpio.c	2018-06-01 15:03:56.747953854 +0900
++++ b/arch/arm/mach-bcm2708/bcm2708_gpio.c	2018-06-01 15:15:10.451012982 +0900
+@@ -19,6 +19,8 @@
+ #include <linux/slab.h>
+ #include <mach/gpio.h>
+ #include <linux/gpio.h>
++#include <linux/ipipe.h>
++#include <linux/ipipe_tickdev.h>
+ #include <linux/platform_device.h>
+ #include <mach/platform.h>
+ #include <linux/pinctrl/consumer.h>
+@@ -56,7 +58,7 @@
+ 	 * the GPIO code. This also makes the case of a GPIO routine call from
+ 	 * the IRQ code simpler.
+ 	 */
+-static DEFINE_SPINLOCK(lock);	/* GPIO registers */
++static IPIPE_DEFINE_SPINLOCK(lock);	/* GPIO registers */
+ 
+ struct bcm2708_gpio {
+ 	struct list_head list;
+@@ -270,6 +272,10 @@
+ 	.name = "GPIO",
+ 	.irq_enable = bcm2708_gpio_irq_unmask,
+ 	.irq_disable = bcm2708_gpio_irq_mask,
++#ifdef CONFIG_IPIPE
++	.irq_ack        = bcm2708_gpio_irq_mask,
++	.irq_mask_ack   = bcm2708_gpio_irq_mask,
++#endif /* CONFIG_IPIPE */
+ 	.irq_unmask = bcm2708_gpio_irq_unmask,
+ 	.irq_mask = bcm2708_gpio_irq_mask,
+ 	.irq_set_type = bcm2708_gpio_irq_set_type,
+@@ -294,7 +300,7 @@
+ 			if (!(level_bits & (1<<i)))
+ 				writel(1<<i,
+ 				       __io_address(GPIO_BASE) + GPIOEDS(bank));
+-			generic_handle_irq(gpio_to_irq(gpio));
++			ipipe_handle_demuxed_irq(gpio_to_irq(gpio));
+ 			/* ack level triggered IRQ after handling them */
+ 			if (level_bits & (1<<i))
+ 				writel(1<<i,
+@@ -324,7 +330,7 @@
+ 	}
+ 
+ 	bcm2708_gpio_irq.dev_id = ucb;
+-	setup_irq(IRQ_GPIO3, &bcm2708_gpio_irq);
++	irq_set_chained_handler(IRQ_GPIO3, bcm2708_gpio_interrupt);
+ }
+ 
+ #else
