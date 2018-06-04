@@ -32,9 +32,12 @@ Replace 'ln -sf' by 'cp'  so that it will copy all neccessary xenomai files to l
 	  git clone -b rpi-4.1.y --depth 1 git://github.com/raspberrypi/linux.git linux-rpi-4.1.y-xeno3
 	  ln -s linux-rpi-4.1.y-xeno3 linux
     
-* Download patches set:
+* Download patches set from:
 
-	  git clone git://github.com/thanhtam-h/rpi01-4.1.21-xeno3-scripts.git xeno3-patches
+	  mkdir xeno3-patches
+Download all files in this directory and save them to *xeno3-patches* directory
+
+	  https://github.com/thanhtam-h/rpi01-4.1.21-xeno3/tree/master/scripts
             
 	
 Patching
@@ -120,7 +123,7 @@ For kernel image, modules and headers, we are going to use debian pakage file. F
 
       sudo dpkg -i linux-image*
       sudo dpkg -i linux-headers*
-      sudo tar -xjvf 4.1.21-dts.tar.bz2
+      sudo tar -xjvf linux-dts-4.1.21-xeno3+.tar.bz2
       cd dts
       sudo cp -rf * /boot/
       sudo mv /boot/vmlinuz-4.1.21-xeno3+ /boot/kernel.img
@@ -146,7 +149,7 @@ Go to xenomai source directory:
 After installation, the built xenomai for raspberry will be located at */usr/xenomai* directory on host PC, compress it and transfer to rpi:
 
       tar -cjvf rpi01-xeno3-deploy.tar.bz2 /usr/xenomai
-Transfer this file (xenomai-3.0.5-cobalt-rpi01-deploy.tar.bz2) to rpi and extract it:
+Transfer this file (rpi01-xeno3-deploy.tar.bz2) to rpi and extract it:
 
       sudo tar -xjvf rpi01-xeno3-deploy.tar.bz2 -C /
 Make a configuration file and link to xenomai directory
