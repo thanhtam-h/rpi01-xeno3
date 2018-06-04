@@ -7,7 +7,7 @@ Download and transfer all files in this directory to rpi01. From rpi:
 
      sudo dpkg -i linux-image*
      sudo dpkg -i linux-headers*
-     sudo tar -xjvf 4.1.21-dts.tar.bz2
+     sudo tar -xjvf linux-dts-4.1.21-xeno3+.tar.bz2
      cd dts
      sudo cp -rf * /boot/
      sudo mv /boot/vmlinuz-4.1.21-xeno3+ /boot/kernel.img
