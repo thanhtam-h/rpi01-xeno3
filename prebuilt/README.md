@@ -20,7 +20,7 @@ Manually deploy (optional)
 ------------
 From prebuilt directory:
 
-    	sudo rm /boot/*4.1.21-xeno3+
+	sudo rm /boot/*4.1.21-xeno3+
 	sudo dpkg -i linux-image*
 	sudo dpkg -i linux-headers*
 	tar -xjvf linux-dts-4.1.*.tar.bz2
