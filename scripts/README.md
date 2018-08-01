@@ -21,7 +21,7 @@ Preparation on host PC
 * Download xenomai-3: 
 By my experience, only xenomai versions eariler than 3.0.5 work, I select xenomai 3.0.5 for this guide 
 
-      wget https://git.xenomai.org/xenomai-3.git/snapshot/xenomai-3-3.0.5.tar.bz2
+      wget https://xenomai.org/downloads/xenomai/stable/xenomai-3.0.5.tar.bz2
       tar -xjvf xenomai-3-3.0.5.tar.bz2
       ln -s xenomai-3-3.0.5 xenomai
 MODIFY 'xenomai/scripts/prepare-kernel.sh' file
